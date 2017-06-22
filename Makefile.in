@@ -51,6 +51,7 @@ GLIBC_CC_FOR_TARGET ?= $(LINUX_TUPLE)-gcc
 GLIBC_CXX_FOR_TARGET ?= $(LINUX_TUPLE)-g++
 NEWLIB_CC_FOR_TARGET ?= $(NEWLIB_TUPLE)-gcc
 NEWLIB_CXX_FOR_TARGET ?= $(NEWLIB_TUPLE)-g++
+GCC_TARGET_BOARDS ?= $(shell echo "$(MULTILIB_NAMES)" | sed 's@\([a-z0-9]*\)-\([a-z0-9]*\)@riscv-sim/-march=\1/-mabi=\2@g')
 
 CONFIGURE_HOST   = @configure_host@
 
@@ -324,7 +325,7 @@ stamps/check-gcc-newlib: stamps/build-gcc-newlib-stage2 stamps/build-qemu
 	export DEJAGNULIBS=$(srcdir)/riscv-dejagnu && \
 	export RISC_V_SYSROOT=$(SYSROOT) && \
 	cd build-gcc-newlib-stage2 && \
-	$(MAKE) check-gcc "RUNTESTFLAGS=--target_board=riscv-sim"
+	$(MAKE) check-gcc "RUNTESTFLAGS=--target_board='$(GCC_TARGET_BOARDS)'"
 	date > $@
 
 stamps/check-gcc-linux: stamps/build-gcc-linux-stage2 stamps/build-qemu
@@ -332,16 +333,17 @@ stamps/check-gcc-linux: stamps/build-gcc-linux-stage2 stamps/build-qemu
 	export DEJAGNULIBS=$(srcdir)/riscv-dejagnu && \
 	export RISC_V_SYSROOT=$(SYSROOT) && \
 	cd build-gcc-linux-stage2 && \
-	$(MAKE) check-gcc "RUNTESTFLAGS=--target_board=riscv-sim"
+	$(MAKE) check-gcc "RUNTESTFLAGS=--target_board='$(GCC_TARGET_BOARDS)'"
 	date > $@
 
 .PHONY: report-gcc-newlib
+
 report-gcc-newlib: stamps/check-gcc-newlib
-	if find build-gcc-newlib-stage2/gcc/testsuite/ -iname '*.sum' | xargs grep ^FAIL | sort | grep -F -v --file=$(srcdir)/test/gcc-newlib/$(patsubst --with-arch=%,%,$(WITH_ARCH))-$(patsubst --with-abi=%,%,$(WITH_ABI)).log; then false; else true; fi
+	if find build-gcc-newlib-stage2/gcc/testsuite/ -iname '*.sum' | xargs grep ^FAIL | sort | grep -F -v $(patsubst %,--file=$(srcdir)/test/gcc-newlib/%.log,$(MULTILIB_NAMES)); then false; else true; fi
 
 .PHONY: report-gcc-linux
 report-gcc-linux: stamps/check-gcc-linux
-	 if find build-gcc-linux-stage2/gcc/testsuite/ -iname '*.sum' | xargs grep ^FAIL | sort | grep -F -v --file=$(srcdir)/test/gcc-linux/$(patsubst --with-arch=%,%,$(WITH_ARCH))-$(patsubst --with-abi=%,%,$(WITH_ABI)).log; then false; else true; fi
+	 if find build-gcc-linux-stage2/gcc/testsuite/ -iname '*.sum' | xargs grep ^FAIL | sort | grep -F -v $(patsubst %,--file=$(srcdir)/test/gcc-linux/%.log,$(MULTILIB_NAMES)); then false; else true; fi
 
 clean:
 	rm -rf build-* $(addprefix src/,$(PACKAGES)) stamps
