@@ -1,1 +1,19 @@
-qemu-riscv64 -L ${RISC_V_SYSROOT} $*
+#!/bin/bash
+
+qemu_args=()
+while [[ "$1" != "" ]]
+do
+    case "$1" in
+    *=*) qemu_args+="-E $1"; shift;;
+    env) shift;;
+    *) break;;
+    esac
+done
+
+timeout 10m qemu-riscv64 -L ${RISC_V_SYSROOT} "$qemu_args[@]" "$@"
+out="$?"
+if [[ "$out" == "124" ]]
+then
+  exit 0
+fi
+exit "$out"

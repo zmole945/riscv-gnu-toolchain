@@ -31,6 +31,8 @@ endif
 
 export PATH AWK SED
 
+.SECONDARY:
+
 MULTILIB_FLAGS := @multilib_flags@
 MULTILIB_NAMES := @multilib_names@
 GCC_CHECKING_FLAGS := @gcc_checking@
@@ -75,10 +77,16 @@ build-qemu: stamps/build-qemu
 .PHONY: check check-gcc
 check: check-gcc
 check-gcc: stamps/check-gcc-@default_target@
+check-glibc: stamps/check-glibc-$(patsubst --with-arch=%,%,$(WITH_ARCH))-$(patsubst --with-abi=%,%,$(WITH_ABI))
 
 .PHONY: report report-gcc
 report: report-gcc
 report-gcc: report-gcc-@default_target@
+
+ifeq (@default_target@,linux)
+check: check-glibc
+report: report-gilbc
+endif
 
 $(addprefix src/original-,$(PACKAGES)):
 	mkdir -p src
@@ -123,20 +131,20 @@ stamps/build-linux-headers:
 	cp -a $(srcdir)/linux-headers/include $(SYSROOT)/usr/
 	mkdir -p $(dir $@) && touch $@
 
-stamps/build-glibc-linux-headers: $(srcdir)/riscv-glibc stamps/build-gcc-linux-stage1
+stamps/build-glibc-linux-headers: $(srcdir)/riscv-glibc stamps/build-gcc-linux-stage1 stamps/build-linux-headers
 	rm -rf $@ $(notdir $@)
 	mkdir $(notdir $@)
 	cd $(notdir $@) && CC="$(GLIBC_CC_FOR_TARGET)" $</configure \
 		--host=$(LINUX_TUPLE) \
 		--prefix=$(SYSROOT)/usr \
 		--enable-shared \
-		--with-headers=$(srcdir)/linux-headers/include \
+		--with-headers=$(SYSROOT)/usr/include \
 		--disable-multilib \
 		--enable-kernel=3.0.0
 	$(MAKE) -C $(notdir $@) install-headers
 	mkdir -p $(dir $@) && touch $@
 
-stamps/build-glibc-linux-%: $(srcdir)/riscv-glibc stamps/build-gcc-linux-stage1
+stamps/build-glibc-linux-%: $(srcdir)/riscv-glibc stamps/build-gcc-linux-stage1 stamps/build-linux-headers
 	$(eval $@_ARCH := $(word 4,$(subst -, ,$@)))
 	$(eval $@_ABI := $(word 5,$(subst -, ,$@)))
 	$(eval $@_LIBDIRSUFFIX := $(if $($@_ABI),$(shell echo $($@_ARCH) | sed 's/.*rv\([0-9]*\).*/\1/')/$($@_ABI),))
@@ -147,14 +155,16 @@ stamps/build-glibc-linux-%: $(srcdir)/riscv-glibc stamps/build-gcc-linux-stage1
 	mkdir $(notdir $@)
 	cd $(notdir $@) && \
 		CC="$(GLIBC_CC_FOR_TARGET) $($@_CFLAGS)" \
+		CXX="$(GLIBC_CXX_FOR_TARGET) $($@_CFLAGS)" \
 		CFLAGS="$(CFLAGS_FOR_TARGET) -g -O2 $($@_CFLAGS)" \
+		CXXFLAGS="$(CFLAGS_FOR_TARGET) -g -O2 $($@_CFLAGS)" \
 		ASFLAGS="$(ASFLAGS_FOR_TARGET) $($@_CFLAGS)" \
 		$</configure \
 		--host=$(call make_tuple,$($@_XLEN),linux-gnu) \
 		--prefix=/usr \
 		--disable-werror \
 		--enable-shared \
-		--with-headers=$(srcdir)/linux-headers/include \
+		--with-headers=$(SYSROOT)/usr/include \
 		$(MULTILIB_FLAGS) \
 		--enable-kernel=3.0.0 \
 		$(GLIBC_TARGET_FLAGS) \
@@ -197,7 +207,8 @@ stamps/build-gcc-linux-stage1: $(srcdir)/riscv-gcc stamps/build-binutils-linux \
 	$(MAKE) -C $(notdir $@) inhibit-libc=true install-target-libgcc
 	mkdir -p $(dir $@) && touch $@
 
-stamps/build-gcc-linux-stage2: $(srcdir)/riscv-gcc $(addprefix stamps/build-glibc-linux-,$(MULTILIB_NAMES)) \
+stamps/build-gcc-linux-stage2: $(srcdir)/riscv-gcc \
+				$(patsubst %,stamps/build-glibc-linux-%-stage1,$(MULTILIB_NAMES)) \
                                stamps/build-glibc-linux-headers
 	rm -rf $@ $(notdir $@)
 	mkdir $(notdir $@)
@@ -332,6 +343,16 @@ stamps/check-gcc-linux: stamps/build-gcc-linux-stage2 stamps/build-qemu
 	export RISC_V_SYSROOT=$(SYSROOT) && \
 	cd build-gcc-linux-stage2 && \
 	$(MAKE) check-gcc "RUNTESTFLAGS=--target_board=riscv-sim"
+	date > $@
+
+stamps/check-glibc-%: stamps/build-glibc-linux-%-stage2 stamps/build-gcc-linux-stage2 stamps/build-qemu
+	$(eval $@_ARCH := $(word 3,$(subst -, ,$@)))
+	$(eval $@_ABI := $(word 4,$(subst -, ,$@)))
+	$(eval $@_LIBDIRSUFFIX := $(if $($@_ABI),$(shell echo $($@_ARCH) | sed 's/.*rv\([0-9]*\).*/\1/')/$($@_ABI),))
+	$(eval $@_XLEN := $(if $($@_ABI),$(shell echo $($@_ARCH) | sed 's/.*rv\([0-9]*\).*/\1/'),$(XLEN)))
+	$(eval $@_CFLAGS := $(if $($@_ABI),-march=$($@_ARCH) -mabi=$($@_ABI),))
+	$(eval $@_LIBDIROPTS := $(if $@_LIBDIRSUFFIX,--libdir=/usr/lib$($@_LIBDIRSUFFIX) libc_cv_slibdir=/lib$($@_LIBDIRSUFFIX) libc_cv_rtlddir=/lib,))
+	make -C $(notdir $<) test-wrapper="$(abspath $(srcdir)/scripts/wrapper/qemu/riscv$($@_XLEN)-unknown-linux-gnu-run)" check
 	date > $@
 
 .PHONY: report-gcc-newlib

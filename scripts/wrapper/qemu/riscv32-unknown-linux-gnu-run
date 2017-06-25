@@ -1,1 +1,13 @@
-qemu-riscv32 -L ${RISC_V_SYSROOT} $*
+#!/bin/bash
+
+qemu_args=()
+while [[ "$1" != "" ]]
+do
+    case "$1" in
+    *=*) qemu_args+="-E $1"; shift;;
+    env) shift;;
+    *) break;;
+    esac
+done
+
+qemu-riscv32 -L ${RISC_V_SYSROOT} "$qemu_args[@]" "$@"
