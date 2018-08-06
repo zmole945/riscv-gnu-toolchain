@@ -44,7 +44,7 @@ ifeq ($(MULTILIB_NAMES),)
 	MULTILIB_NAMES := $(XLEN)
 endif
 
-make_tuple = riscv$(1)-unknown-$(2)
+make_tuple = rpu$(1)-unknown-$(2)
 LINUX_TUPLE  ?= $(call make_tuple,$(XLEN),linux-gnu)
 NEWLIB_TUPLE ?= $(call make_tuple,$(XLEN),elf)
 
